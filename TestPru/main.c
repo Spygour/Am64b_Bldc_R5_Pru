@@ -364,6 +364,7 @@ int main(void)
                     CT_IEP1.cmp12_reg1 = CT_IEP1.cmp11_reg1 + MemArray.bufferAddrs[DEADTIME];
                     if (MemArray.bufferAddrs[ENABLE] == 0x0)
                     {
+                        pwm_enable = 0x0;
                         pwm_main_st = RESTART_PHASE;
                     }
                     else 

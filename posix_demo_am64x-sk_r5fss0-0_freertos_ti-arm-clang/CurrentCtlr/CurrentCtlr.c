@@ -12,6 +12,7 @@
 /* Definitions */
 #define V_OFFSET_CALC_PHASE_MAX_CNT 400
 #define R_CALC_PHASE_MAX_CNT 400
+#define PI_PHASE_MAX_CNT 400
 
 #define MAX_DUTY 120000
 
@@ -34,7 +35,8 @@
 typedef enum {
   V_OFFSET_CALC_PHASE,
   R_CALC_PHASE,
-  PI_CONTROL_PHASE
+  PI_CONTROL_PHASE,
+  END_PHASE
 } CurrentCtlr_State_t;
 
 /* static Variables */
@@ -149,9 +151,11 @@ static void CurrentCtlr_InverseClarkeTransform(void) {
     CurrentCtlr_Duty[i] = (uint32_t)duty_tmp_float;
 
     // Safety clamp to ensure it never breaches boundaries
-    if (duty_tmp_float > MAX_DUTY)  duty_tmp_float = MAX_DUTY;
-    if (duty_tmp_float < 0.0f)      duty_tmp_float = 0.0f;
-    
+    if (duty_tmp_float > MAX_DUTY)
+      duty_tmp_float = MAX_DUTY;
+    if (duty_tmp_float < 0.0f)
+      duty_tmp_float = 0.0f;
+
     CurrentCtlr_Duty[i] = (uint32_t)duty_tmp_float;
   }
 }
@@ -237,7 +241,22 @@ static void CurrentCtlr_Main(void) {
     CurrentCtlr_InverseClarkeTransform();
     /* Update Pwms */
     Pwm_SetDutycycle(CurrentCtlr_Duty);
-    CurrentCtlr_IsrCnt++;
+    if (CurrentCtlr_IsrCnt == PI_PHASE_MAX_CNT) {
+      CurrentCtlr_IsrCnt = 0;
+      Pwm_EnableOutputs(false);
+      CurrentCtlr_State = END_PHASE;
+    } else {
+      CurrentCtlr_IsrCnt++;
+    }
+  } break;
+
+  case END_PHASE: {
+    if (CurrentCtlr_IsrCnt == 200) {
+      CurrentCtlr_IsrCnt = 0;
+      CurrentCtlr_State = V_OFFSET_CALC_PHASE;
+    } else {
+      CurrentCtlr_IsrCnt++;
+    }
   } break;
 
   default:
