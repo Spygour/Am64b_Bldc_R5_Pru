@@ -30,6 +30,8 @@ const pruicss    = scripting.addModule("/drivers/pruicss/pruicss", {}, false);
 const pruicss1   = pruicss.addInstance();
 const udma       = scripting.addModule("/drivers/udma/udma", {}, false);
 const udma1      = udma.addInstance();
+const watchdog   = scripting.addModule("/drivers/watchdog/watchdog", {}, false);
+const watchdog1  = watchdog.addInstance();
 const clock      = scripting.addModule("/kernel/dpl/clock");
 const debug_log  = scripting.addModule("/kernel/dpl/debug_log");
 const mpu_armv7  = scripting.addModule("/kernel/dpl/mpu_armv7", {}, false);
@@ -179,6 +181,10 @@ pruicss1.intcMapping[0].channel                                                 
 
 udma1.$name       = "CONFIG_UDMA0";
 mcspi1.udmaDriver = udma1;
+
+watchdog1.$name              = "CONFIG_WDT0";
+watchdog1.initializationTime = 5000;
+watchdog1.resetMode          = "Watchdog_RESET_OFF";
 
 mpu_armv71.$name             = "CONFIG_MPU_REGION0";
 mpu_armv71.size              = 31;

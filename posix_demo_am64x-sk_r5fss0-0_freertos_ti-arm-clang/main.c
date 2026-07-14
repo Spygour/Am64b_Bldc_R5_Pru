@@ -30,77 +30,101 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <stdlib.h>
-#include "ti_drivers_config.h"
-#include "ti_drivers_open_close.h"
-#include "ti_board_open_close.h"
-#include "PwmDrv/PwmDrv.h"
-#include <drivers/i2c.h>
-#include "ti_board_config.h"
-#include <kernel/dpl/SemaphoreP.h>
-#include "PruDriver/PruDriver.h"
 #include "Ads8688/Ads8688.h"
 #include "CurrentCtlr/CurrentCtlr.h"
 #include "FreeRTOS.h"
+#include "PruDriver/PruDriver.h"
+#include "PwmDrv/PwmDrv.h"
+#include "WatchdogService/Wd.h"
 #include "task.h"
+#include "ti_board_config.h"
+#include "ti_board_open_close.h"
+#include "ti_drivers_config.h"
+#include "ti_drivers_open_close.h"
+#include <drivers/i2c.h>
+#include <kernel/dpl/SemaphoreP.h>
+#include <stdlib.h>
 
-#define MAIN_TASK_PRI  (configMAX_PRIORITIES-1)
+
+#define MAIN_TASK_PRI (configMAX_PRIORITIES - 1)
+#define WD_TASK_PRI (configMAX_PRIORITIES - 2)
 
 #define SHARED_MEM_BUFFER_SIZE 128
 
-#define MAIN_TASK_SIZE (16384U/sizeof(256))
+#define MAIN_TASK_SIZE (4096)
 StackType_t gMainTaskStack[MAIN_TASK_SIZE] __attribute__((aligned(32)));
 
 StaticTask_t gMainTaskObj;
 TaskHandle_t gMainTask;
 
+#define WD_TASK_SIZE (256)
+StackType_t WdTaskStack[MAIN_TASK_SIZE] __attribute__((aligned(32)));
+
+StaticTask_t WdTaskObj;
+TaskHandle_t WdTask;
+
 /* semaphore used to indicate that the ISR has finished reading samples */
 SemaphoreP_Object gAdcDataRecSem;
 
-void freertos_main(void *args)
-{
-    Ads8688_Init();
+void freertos_main(void *args) {
+  Ads8688_Init();
 
-    CurrentCtlr_Init();
-    
-    Pru_InitCore();
+  CurrentCtlr_Init();
 
-    for (;;)
-    {
-        Ads8688_Isr();
+  Pru_InitCore();
 
-        CurrentCtlr_Isr();
-    }
+  for (;;) {
+    Ads8688_Isr();
 
-    vTaskDelete(NULL);
+    CurrentCtlr_Isr();
+  }
+
+  vTaskDelete(NULL);
 }
 
-int main(void)
-{
-    System_init();
-    Board_init();
+int main(void) {
+  System_init();
+  Board_init();
+  Wd_Init();
+  /* This task is created at highest priority, it should create more tasks and
+   * then delete itself */
+  gMainTask = xTaskCreateStatic(
+      freertos_main,   /* Pointer to the function that implements the task. */
+      "freertos_main", /* Text name for the task.  This is to facilitate
+                          debugging only. */
+      MAIN_TASK_SIZE,  /* Stack depth in units of StackType_t typically uint32_t
+                          on 32b CPUs */
+      NULL,            /* We are not using the task parameter. */
+      MAIN_TASK_PRI, /* task priority, 0 is lowest priority,
+                            configMAX_PRIORITIES-1 is highest */
+      gMainTaskStack,    /* pointer to stack base */
+      &gMainTaskObj); /* pointer to statically allocated task object memory */
+  configASSERT(gMainTask != NULL);
+  /* This task is created at highest priority, it should create more tasks and
+   * then delete itself */
+  WdTask = xTaskCreateStatic(
+      Wd_Task,      /* Pointer to the function that implements the task. */
+      "wd_service", /* Text name for the task.  This is to facilitate debugging
+                       only. */
+      WD_TASK_SIZE, /* Stack depth in units of StackType_t typically uint32_t on
+                       32b CPUs */
+      NULL,         /* We are not using the task parameter. */
+      WD_TASK_PRI, /* task priority, 0 is lowest priority,
+                          configMAX_PRIORITIES-1 is highest */
+      WdTaskStack,     /* pointer to stack base */
+      &WdTaskObj);     /* pointer to statically allocated task object memory */
+  configASSERT(WdTask != NULL);
+  // while(Spi_Finished == FALSE);
+  /* Start the Pru and the pwms*/
 
-    /* This task is created at highest priority, it should create more tasks and then delete itself */
-    gMainTask = xTaskCreateStatic( freertos_main,   /* Pointer to the function that implements the task. */
-                                  "freertos_main", /* Text name for the task.  This is to facilitate debugging only. */
-                                  MAIN_TASK_SIZE,  /* Stack depth in units of StackType_t typically uint32_t on 32b CPUs */
-                                  NULL,            /* We are not using the task parameter. */
-                                  MAIN_TASK_PRI - 1,   /* task priority, 0 is lowest priority, configMAX_PRIORITIES-1 is highest */
-                                  gMainTaskStack,  /* pointer to stack base */
-                                  &gMainTaskObj ); /* pointer to statically allocated task object memory */
-    configASSERT(gMainTask != NULL);
-    //while(Spi_Finished == FALSE);
-    /* Start the Pru and the pwms*/
+  /* Start the scheduler to start the tasks executing. */
+  vTaskStartScheduler();
 
-    /* Start the scheduler to start the tasks executing. */
-    vTaskStartScheduler();
-
-    return 0;
+  return 0;
 }
 
-void De_Init(void)
-{
-    Drivers_close();
-    Board_deinit();
-    System_deinit();
+void De_Init(void) {
+  Drivers_close();
+  Board_deinit();
+  System_deinit();
 }
