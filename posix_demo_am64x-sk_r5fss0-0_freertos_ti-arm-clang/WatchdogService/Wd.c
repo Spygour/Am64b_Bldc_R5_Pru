@@ -19,6 +19,13 @@ static uint32_t Wd_Clear_cnt = 0;
 /* Global Variables */
 static volatile uint32_t Wd_Error = 0;
 
+static void Wd_Nmi(Watchdog_Handle handle, void *callbackFxnArgs);
+
+void Safety_Exception_Handler(void * arg)
+{
+    Wd_Nmi(Wd_Handler, NULL);
+}
+
 /* Local functions */
 static void Wd_Nmi(Watchdog_Handle handle, void *callbackFxnArgs) {
   Wd_Error++;
@@ -27,9 +34,21 @@ static void Wd_Nmi(Watchdog_Handle handle, void *callbackFxnArgs) {
 
 /* Global functions */
 void Wd_Init(void) {
+  int status;
+  HwiP_Params             hwiPrms;
+  static HwiP_Object       gRtiHwiObject;
+  /* Register interrupt */
+  HwiP_Params_init(&hwiPrms);
+  hwiPrms.intNum      = CONFIG_WDT0_INTR;
+  hwiPrms.callback    = &Safety_Exception_Handler;
+  status              = HwiP_construct(&gRtiHwiObject, &hwiPrms);
+
+  DebugP_assert(status == SystemP_SUCCESS);
   Watchdog_Params Params_loc;
+  Watchdog_paramsInit(&Params_loc);
+
   Wd_Error = 0;
-  Params_loc.callbackFxn = Wd_Nmi;
+  Params_loc.callbackFxn =&Wd_Nmi;
   Params_loc.callbackFxnArgs = NULL;
   Params_loc.resetMode = Watchdog_RESET_OFF;
   Params_loc.debugStallMode = Watchdog_DEBUG_STALL_OFF;
@@ -37,6 +56,8 @@ void Wd_Init(void) {
   Params_loc.expirationTime = 1000; /* 1 sec */
 
   Wd_Handler = Watchdog_open(0, &Params_loc);
+
+  DebugP_assert(Wd_Handler != NULL);
 }
 
 void Wd_Task(void *args) {

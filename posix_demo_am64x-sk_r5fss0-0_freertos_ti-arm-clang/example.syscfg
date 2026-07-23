@@ -184,7 +184,7 @@ mcspi1.udmaDriver = udma1;
 
 watchdog1.$name              = "CONFIG_WDT0";
 watchdog1.initializationTime = 5000;
-watchdog1.resetMode          = "Watchdog_RESET_OFF";
+watchdog1.instance           = "WDT8";
 
 mpu_armv71.$name             = "CONFIG_MPU_REGION0";
 mpu_armv71.size              = 31;
