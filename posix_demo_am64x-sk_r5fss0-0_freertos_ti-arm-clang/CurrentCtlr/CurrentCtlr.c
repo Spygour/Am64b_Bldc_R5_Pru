@@ -164,7 +164,15 @@ static void CurrentCtlr_InverseClarkeTransform(void) {
 }
 
 static void CurrentCtlr_Main(void) {
+  if (Igd_Start && CurrentCtlr_Enable == 0x2) {
+    Igd_Enable(true);
+  } else if (!Igd_Start) {
+    Igd_Enable(false);
+  }
+
   if (CurrentCtlr_Enable == 0x0) {
+    /* Disable the pwm outputs */
+    Pwm_EnableOutputs(false);
     CurrentCtlr_State = CURRENT_CTLR_ERROR;
   } else if (CurrentCtlr_Enable == 0x2) /* Request pwm */ {
     CurrentCtlr_State = V_OFFSET_CALC_PHASE;

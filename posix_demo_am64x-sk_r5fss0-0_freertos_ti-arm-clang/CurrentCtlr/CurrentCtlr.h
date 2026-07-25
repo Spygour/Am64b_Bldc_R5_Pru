@@ -1,8 +1,9 @@
 #ifndef CURRENTCTLR_H
 #define CURRENTCTLR_H
 /* Includes */
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
+
 /* Definitions */
 #define CURRENTCTLR_PHASES 3
 /* Data Types*/

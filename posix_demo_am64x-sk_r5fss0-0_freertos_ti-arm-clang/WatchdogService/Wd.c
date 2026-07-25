@@ -1,7 +1,6 @@
 /* Includes */
 #include "Wd.h"
 #include "../CurrentCtlr/CurrentCtlr.h"
-#include "../PruDriver/PruDriver.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "ti_board_open_close.h"
@@ -28,10 +27,8 @@ void Safety_Exception_Handler(void *arg) {
   /* Stop the current ctlr */
   if (CurrentCtlr_Enable == 1) // Current Control already running
   {
-    CurrentCtlr_Enable = 0;
+    CurrentCtlr_Enable = 0; // Stop current control
   }
-  /* Disable the pwm outputs */
-  Pwm_EnableOutputs(false);
 }
 
 /* Local functions */

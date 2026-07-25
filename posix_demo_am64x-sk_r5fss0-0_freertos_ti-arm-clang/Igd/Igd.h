@@ -1,15 +1,16 @@
 #ifndef IGD_H
 #define IGD_H
 /* Includes */
-#include <stdint.h>
 #include <stdbool.h>
+#include <stdint.h>
+
 /* Definitions */
 /* Data Types*/
 
 /* Local Variables */
 
 /* Global variables */
-
+extern bool Igd_Start;
 /* Local functions */
 
 /* Global functions */

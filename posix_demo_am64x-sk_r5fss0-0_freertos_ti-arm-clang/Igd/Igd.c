@@ -21,7 +21,7 @@
 static float Igd_voltageOffset[IGD_CURRENT_AMPS];
 static float current_div;
 /* Global Variables */
-
+bool Igd_Start = false;
 /* Function definitions */
 void Igd_Enable(bool enable);
 
@@ -35,14 +35,18 @@ static void Igd_Main(void) {
   baseAddr = (uint32_t)AddrTranslateP_getLocalAddr(N_FAULT_BASE_ADDR);
   nFault = GPIO_pinRead(baseAddr, N_FAULT_PIN);
   if (nFault == GPIO_PIN_HIGH) {
-    Igd_Enable(false);
+    Igd_Start = false;
   }
 
   /* Read the overcurrent status */
   baseAddr = (uint32_t)AddrTranslateP_getLocalAddr(N_OCTW_BASE_ADDR);
   nOctw = GPIO_pinRead(baseAddr, N_OCTW_PIN);
   if (nOctw == GPIO_PIN_HIGH) {
-    Igd_Enable(false);
+    Igd_Start = false;
+  }
+
+  if ((nOctw == GPIO_PIN_LOW) && (nFault == GPIO_PIN_LOW)) {
+    Igd_Start = true;
   }
 }
 
@@ -71,8 +75,7 @@ void Igd_Init(void) {
   GPIO_pinWriteLow(baseAddr, DC_CAL_PIN);
 
   /* Enable the gate driver */
-  baseAddr = (uint32_t)AddrTranslateP_getLocalAddr(IGD_ENABLE_BASE_ADDR);
-  GPIO_pinWriteHigh(baseAddr, IGD_ENABLE_PIN);
+  Igd_Start = true;
 
   /* Check on what calibration is the Gate Driver */
   baseAddr = (uint32_t)AddrTranslateP_getLocalAddr(GAIN_BASE_ADDR);
