@@ -2,6 +2,7 @@
 #define CURRENTCTLR_H
 /* Includes */
 #include <stdint.h>
+#include <stdbool.h>
 /* Definitions */
 #define CURRENTCTLR_PHASES 3
 /* Data Types*/
@@ -41,7 +42,7 @@ typedef struct {
 /* Local Variables */
 
 /* Global variables */
-
+extern uint8_t CurrentCtlr_Enable;
 /* Local functions */
 
 /* Global functions */

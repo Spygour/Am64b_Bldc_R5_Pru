@@ -36,8 +36,12 @@ typedef enum {
   V_OFFSET_CALC_PHASE,
   R_CALC_PHASE,
   PI_CONTROL_PHASE,
-  END_PHASE
+  END_PHASE,
+  CURRENT_CTLR_ERROR
 } CurrentCtlr_State_t;
+
+/* global variables */
+uint8_t CurrentCtlr_Enable = 0x0; // Request start
 
 /* static Variables */
 static CurrentCtlr_MainData_t CurrentCtlr_MainData = {
@@ -148,7 +152,6 @@ static void CurrentCtlr_InverseClarkeTransform(void) {
 
   for (uint8_t i = 0; i < CURRENTCTLR_PHASES; i++) {
     duty_tmp_float = CurrentCtlr_MainData.V[i] * MAX_DUTY / MAX_VOLTAGE;
-    CurrentCtlr_Duty[i] = (uint32_t)duty_tmp_float;
 
     // Safety clamp to ensure it never breaches boundaries
     if (duty_tmp_float > MAX_DUTY)
@@ -161,6 +164,12 @@ static void CurrentCtlr_InverseClarkeTransform(void) {
 }
 
 static void CurrentCtlr_Main(void) {
+  if (CurrentCtlr_Enable == 0x0) {
+    CurrentCtlr_State = CURRENT_CTLR_ERROR;
+  } else if (CurrentCtlr_Enable == 0x2) /* Request pwm */ {
+    CurrentCtlr_State = V_OFFSET_CALC_PHASE;
+    CurrentCtlr_Enable = 0x1;
+  }
   switch (CurrentCtlr_State) {
   case V_OFFSET_CALC_PHASE: {
     if (CurrentCtlr_IsrCnt >= (V_OFFSET_CALC_PHASE_MAX_CNT - 1)) {
@@ -241,13 +250,13 @@ static void CurrentCtlr_Main(void) {
     CurrentCtlr_InverseClarkeTransform();
     /* Update Pwms */
     Pwm_SetDutycycle(CurrentCtlr_Duty);
-    if (CurrentCtlr_IsrCnt == PI_PHASE_MAX_CNT) {
-      CurrentCtlr_IsrCnt = 0;
-      Pwm_EnableOutputs(false);
-      CurrentCtlr_State = END_PHASE;
-    } else {
-      CurrentCtlr_IsrCnt++;
-    }
+    // if (CurrentCtlr_IsrCnt == PI_PHASE_MAX_CNT) {
+    //  CurrentCtlr_IsrCnt = 0;
+    //  Pwm_EnableOutputs(false);
+    //  CurrentCtlr_State = END_PHASE;
+    //} else {
+    //  CurrentCtlr_IsrCnt++;
+    //}
   } break;
 
   case END_PHASE: {

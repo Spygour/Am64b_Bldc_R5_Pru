@@ -1,5 +1,7 @@
 /* Includes */
 #include "Wd.h"
+#include "../CurrentCtlr/CurrentCtlr.h"
+#include "../PruDriver/PruDriver.h"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "ti_board_open_close.h"
@@ -7,7 +9,6 @@
 #include "ti_drivers_open_close.h"
 #include <drivers/watchdog.h>
 #include <string.h>
-
 
 /* Definitions */
 #define WD_TASK_WAIT (uint32_t)500000
@@ -21,9 +22,16 @@ static volatile uint32_t Wd_Error = 0;
 
 static void Wd_Nmi(Watchdog_Handle handle, void *callbackFxnArgs);
 
-void Safety_Exception_Handler(void * arg)
-{
-    Wd_Nmi(Wd_Handler, NULL);
+void Safety_Exception_Handler(void *arg) {
+  /* Serive the watchdog for now, next is a cold reset */
+  Wd_Nmi(Wd_Handler, NULL);
+  /* Stop the current ctlr */
+  if (CurrentCtlr_Enable == 1) // Current Control already running
+  {
+    CurrentCtlr_Enable = 0;
+  }
+  /* Disable the pwm outputs */
+  Pwm_EnableOutputs(false);
 }
 
 /* Local functions */
@@ -35,28 +43,29 @@ static void Wd_Nmi(Watchdog_Handle handle, void *callbackFxnArgs) {
 /* Global functions */
 void Wd_Init(void) {
   int status;
-  HwiP_Params             hwiPrms;
-  static HwiP_Object       gRtiHwiObject;
+  HwiP_Params hwiPrms;
+  static HwiP_Object gRtiHwiObject;
   /* Register interrupt */
   HwiP_Params_init(&hwiPrms);
-  hwiPrms.intNum      = CONFIG_WDT0_INTR;
-  hwiPrms.callback    = &Safety_Exception_Handler;
-  status              = HwiP_construct(&gRtiHwiObject, &hwiPrms);
-
+  hwiPrms.intNum = CONFIG_WDT0_INTR;
+  hwiPrms.callback = &Safety_Exception_Handler;
+  status = HwiP_construct(&gRtiHwiObject, &hwiPrms);
   DebugP_assert(status == SystemP_SUCCESS);
+
+  /* Initialize the components */
+  Wd_Error = 0;
+  CurrentCtlr_Enable = 2; // Request pwm
+
+  /* Initialize the watchdog */
   Watchdog_Params Params_loc;
   Watchdog_paramsInit(&Params_loc);
-
-  Wd_Error = 0;
-  Params_loc.callbackFxn =&Wd_Nmi;
+  Params_loc.callbackFxn = NULL;
   Params_loc.callbackFxnArgs = NULL;
   Params_loc.resetMode = Watchdog_RESET_OFF;
   Params_loc.debugStallMode = Watchdog_DEBUG_STALL_OFF;
   Params_loc.windowSize = Watchdog_WINDOW_100_PERCENT;
   Params_loc.expirationTime = 1000; /* 1 sec */
-
   Wd_Handler = Watchdog_open(0, &Params_loc);
-
   DebugP_assert(Wd_Handler != NULL);
 }
 

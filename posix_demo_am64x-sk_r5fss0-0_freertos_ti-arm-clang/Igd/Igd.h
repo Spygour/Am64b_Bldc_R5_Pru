@@ -2,6 +2,7 @@
 #define IGD_H
 /* Includes */
 #include <stdint.h>
+#include <stdbool.h>
 /* Definitions */
 /* Data Types*/
 
@@ -16,4 +17,6 @@ extern void Igd_Init(void);
 extern void Igd_UpdateVoltageOffset(float *adc_offset, uint8_t size);
 extern void Igd_CalculateCurrent(float *updated_current, float *adc_voltage,
                                  uint8_t size);
+extern void Igd_Enable(bool enable);
+extern void Igd_Task(void *args);
 #endif

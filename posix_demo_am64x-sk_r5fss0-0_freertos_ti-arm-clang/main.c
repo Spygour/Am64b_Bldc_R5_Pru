@@ -33,35 +33,41 @@
 #include "Ads8688/Ads8688.h"
 #include "CurrentCtlr/CurrentCtlr.h"
 #include "FreeRTOS.h"
+#include "Igd/Igd.h"
 #include "PruDriver/PruDriver.h"
-#include "PwmDrv/PwmDrv.h"
 #include "WatchdogService/Wd.h"
 #include "task.h"
 #include "ti_board_config.h"
 #include "ti_board_open_close.h"
 #include "ti_drivers_config.h"
 #include "ti_drivers_open_close.h"
-#include <drivers/i2c.h>
 #include <kernel/dpl/SemaphoreP.h>
 #include <stdlib.h>
 
 
 #define MAIN_TASK_PRI (configMAX_PRIORITIES - 1)
 #define WD_TASK_PRI (configMAX_PRIORITIES - 2)
+#define IGD_TASK_PRI (configMAX_PRIORITIES - 3)
 
 #define SHARED_MEM_BUFFER_SIZE 128
 
 #define MAIN_TASK_SIZE (4096)
+#define WD_TASK_SIZE (512)
+#define IGD_TASK_SIZE (1024)
 StackType_t gMainTaskStack[MAIN_TASK_SIZE] __attribute__((aligned(32)));
 
 StaticTask_t gMainTaskObj;
 TaskHandle_t gMainTask;
 
-#define WD_TASK_SIZE (256)
-StackType_t WdTaskStack[MAIN_TASK_SIZE] __attribute__((aligned(32)));
+StackType_t WdTaskStack[WD_TASK_SIZE] __attribute__((aligned(32)));
 
 StaticTask_t WdTaskObj;
 TaskHandle_t WdTask;
+
+StackType_t IgdTaskStack[IGD_TASK_SIZE] __attribute__((aligned(32)));
+
+StaticTask_t IgdTaskObj;
+TaskHandle_t IgdTask;
 
 /* semaphore used to indicate that the ISR has finished reading samples */
 SemaphoreP_Object gAdcDataRecSem;
@@ -72,6 +78,8 @@ void freertos_main(void *args) {
   CurrentCtlr_Init();
 
   Pru_InitCore();
+
+  Igd_Init();
 
   for (;;) {
     Ads8688_Isr();
@@ -95,13 +103,12 @@ int main(void) {
       MAIN_TASK_SIZE,  /* Stack depth in units of StackType_t typically uint32_t
                           on 32b CPUs */
       NULL,            /* We are not using the task parameter. */
-      MAIN_TASK_PRI, /* task priority, 0 is lowest priority,
-                            configMAX_PRIORITIES-1 is highest */
-      gMainTaskStack,    /* pointer to stack base */
-      &gMainTaskObj); /* pointer to statically allocated task object memory */
+      MAIN_TASK_PRI,   /* task priority, 0 is lowest priority,
+                              configMAX_PRIORITIES-1 is highest */
+      gMainTaskStack,  /* pointer to stack base */
+      &gMainTaskObj);  /* pointer to statically allocated task object memory */
   configASSERT(gMainTask != NULL);
-  /* This task is created at highest priority, it should create more tasks and
-   * then delete itself */
+  /* Wd task initiliazation */
   WdTask = xTaskCreateStatic(
       Wd_Task,      /* Pointer to the function that implements the task. */
       "wd_service", /* Text name for the task.  This is to facilitate debugging
@@ -109,14 +116,26 @@ int main(void) {
       WD_TASK_SIZE, /* Stack depth in units of StackType_t typically uint32_t on
                        32b CPUs */
       NULL,         /* We are not using the task parameter. */
-      WD_TASK_PRI, /* task priority, 0 is lowest priority,
-                          configMAX_PRIORITIES-1 is highest */
-      WdTaskStack,     /* pointer to stack base */
-      &WdTaskObj);     /* pointer to statically allocated task object memory */
+      WD_TASK_PRI,  /* task priority, 0 is lowest priority,
+                           configMAX_PRIORITIES-1 is highest */
+      WdTaskStack,  /* pointer to stack base */
+      &WdTaskObj);  /* pointer to statically allocated task object memory */
   configASSERT(WdTask != NULL);
-  // while(Spi_Finished == FALSE);
-  /* Start the Pru and the pwms*/
 
+  /* Igd task initiliazation */
+  IgdTask = xTaskCreateStatic(
+      Igd_Task,      /* Pointer to the function that implements the task. */
+      "igd_service", /* Text name for the task.  This is to facilitate debugging
+                       only. */
+      IGD_TASK_SIZE, /* Stack depth in units of StackType_t typically uint32_t
+                       on 32b CPUs */
+      NULL,          /* We are not using the task parameter. */
+      IGD_TASK_PRI,  /* task priority, 0 is lowest priority,
+                           configMAX_PRIORITIES-1 is highest */
+      IgdTaskStack,  /* pointer to stack base */
+      &IgdTaskObj);  /* pointer to statically allocated task object memory */
+  configASSERT(IgdTask != NULL);
+  
   /* Start the scheduler to start the tasks executing. */
   vTaskStartScheduler();
 

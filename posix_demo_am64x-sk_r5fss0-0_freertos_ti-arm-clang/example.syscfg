@@ -22,6 +22,13 @@ const gpio4      = gpio.addInstance();
 const gpio5      = gpio.addInstance();
 const gpio6      = gpio.addInstance();
 const gpio7      = gpio.addInstance();
+const gpio8      = gpio.addInstance();
+const gpio9      = gpio.addInstance();
+const gpio10     = gpio.addInstance();
+const gpio11     = gpio.addInstance();
+const gpio12     = gpio.addInstance();
+const gpio13     = gpio.addInstance();
+const gpio14     = gpio.addInstance();
 const i2c        = scripting.addModule("/drivers/i2c/i2c", {}, false);
 const i2c1       = i2c.addInstance();
 const mcspi      = scripting.addModule("/drivers/mcspi/mcspi", {}, false);
@@ -112,6 +119,32 @@ gpio7.pinDir               = "OUTPUT";
 gpio7.$name                = "IGD_ENABLE";
 gpio7.GPIO.gpioPin.rx      = false;
 gpio7.GPIO.gpioPin.$assign = "PRG0_PRU0_GPO9";
+
+gpio8.pinDir               = "OUTPUT";
+gpio8.defaultValue         = "1";
+gpio8.$name                = "PWRGD";
+gpio8.GPIO.$assign         = "GPIO1";
+gpio8.GPIO.gpioPin.$assign = "PRG0_PRU0_GPO10";
+
+gpio9.$name                = "N_FAULT";
+gpio9.GPIO.gpioPin.$assign = "PRG0_PRU0_GPO11";
+
+gpio10.$name = "N_OCTW";
+
+gpio11.pinDir               = "OUTPUT";
+gpio11.$name                = "M_PWM";
+gpio11.GPIO.gpioPin.$assign = "PRG0_PRU0_GPO12";
+
+gpio12.pinDir               = "OUTPUT";
+gpio12.$name                = "M_OC";
+gpio12.GPIO.gpioPin.$assign = "PRG0_PRU0_GPO13";
+
+gpio13.$name                = "GAIN";
+gpio13.GPIO.gpioPin.$assign = "PRG0_PRU0_GPO14";
+
+gpio14.pinDir               = "OUTPUT";
+gpio14.$name                = "DC_CAL";
+gpio14.GPIO.gpioPin.$assign = "PRG0_PRU0_GPO15";
 
 i2c1.$name               = "CONFIG_I2C0";
 i2c1.transferMode        = "CALLBACK";
@@ -235,6 +268,13 @@ gpio3.GPIO.$suggestSolution                 = "GPIO1";
 gpio4.GPIO.$suggestSolution                 = "GPIO1";
 gpio5.GPIO.$suggestSolution                 = "GPIO1";
 gpio7.GPIO.$suggestSolution                 = "GPIO1";
+gpio9.GPIO.$suggestSolution                 = "GPIO1";
+gpio10.GPIO.$suggestSolution                = "GPIO1";
+gpio10.GPIO.gpioPin.$suggestSolution        = "ADC0_AIN7";
+gpio11.GPIO.$suggestSolution                = "GPIO1";
+gpio12.GPIO.$suggestSolution                = "GPIO1";
+gpio13.GPIO.$suggestSolution                = "GPIO1";
+gpio14.GPIO.$suggestSolution                = "GPIO1";
 i2c1.I2C.SCL.$suggestSolution               = "I2C1_SCL";
 i2c1.I2C.SDA.$suggestSolution               = "I2C1_SDA";
 mcspi1.SPI.CLK.$suggestSolution             = "SPI0_CLK";
