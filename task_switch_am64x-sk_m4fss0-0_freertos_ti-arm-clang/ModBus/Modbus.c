@@ -1,25 +1,21 @@
 /* Includes */
 #include "Modbus.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include "ti_board_open_close.h"
 #include "ti_drivers_config.h"
 #include "ti_drivers_open_close.h"
-#include "FreeRTOS.h"
-#include "task.h"
 #include <kernel/dpl/SemaphoreP.h>
 #include <math.h>
 #include <string.h>
 
 /* Definitions */
-#define MODBUS_TASK_PRI  (configMAX_PRIORITIES-2)
+#define MODBUS_TASK_PRI (configMAX_PRIORITIES - 2)
 #define MODBUS_TASK_WAIT 500000
-#define MODBUS_TASK_SIZE (16384U/sizeof(configSTACK_DEPTH_TYPE))
+#define MODBUS_TASK_SIZE (16384U / sizeof(configSTACK_DEPTH_TYPE))
 #define MODBUS_PKT_NUM 16
 /* Types */
-typedef enum
-{
-    WRITE_STATE,
-    READ_STATE
-}Modbus_Task_st;
+typedef enum { WRITE_STATE, READ_STATE, FAIL_STATE } Modbus_Task_st;
 
 /* global variables */
 StackType_t ModbusTaskStack[MODBUS_TASK_SIZE] __attribute__((aligned(32)));
@@ -29,6 +25,7 @@ TaskHandle_t ModbusTask;
 Modbus_Task_st Modbus_TaskSt = READ_STATE;
 
 /* static Variables */
+static volatile Modbus_ReadOk = false;
 static MODBUS_PKT_T Modbus_TxPkt[MODBUS_PKT_NUM];
 static MODBUS_PKT_T Modbus_RxPkt[MODBUS_PKT_NUM];
 
@@ -39,52 +36,53 @@ static SemaphoreP_Object gUartWriteDoneSem;
 static SemaphoreP_Object gUartReadDoneSem;
 
 /* Static function */
-static void Modbus_CrcCalc(MODBUS_PKT_T *modbuspkt)
-{
-    uint8_t *modbusPkt_Fixed = (uint8_t *)modbuspkt; /* Remove the data len */
-    uint16_t modbus_crc = 0;
-    /* Don't include the crc bytes */
-    for(uint16_t pos = 0; pos < (sizeof(MODBUS_PKT_T) - 2); pos++)
-    {
-        modbus_crc ^= modbusPkt_Fixed[pos];
+static uint16_t Modbus_CrcCalc(MODBUS_PKT_T *modbuspkt) {
+  uint8_t *data = (uint8_t *)modbuspkt; /* Remove the data len */
+  uint16_t modbus_crc = 0xFFFF;
+  const uint16_t polynomial = 0xA001; // Reversed polynomial
 
-        for(uint8_t i = 0; i < 8; i++)
-        {
-            if(modbus_crc & 0x0001)
-            {
-                modbus_crc >>= 1;
-                modbus_crc ^= 0xA001;
-            }
-            else
-            {
-                modbus_crc >>= 1;
-            }
-        }
-    }
+  for (size_t i = 0; i < sizeof(MODBUS_PKT_T) - 2; i++) {
+      // Step 2: XOR the next byte into the low byte of the CRC register
+      modbus_crc ^= data[i];
+      // Loop through all 8 bits of the current byte
+      for (int bit = 0; bit < 8; bit++) {
+          // Step 4: Check if the Least Significant Bit (LSB) is 1
+          if (modbus_crc & 0x0001) {
+              // Step 3 & 4a: Shift right and XOR with the polynomial
+              modbus_crc = (modbus_crc >> 1) ^ polynomial;
+          } else {
+              // Step 3 & 4b: Just shift right
+              modbus_crc >>= 1;
+          }
+      }
+  }
 
-    /* Store the Crc */
-    modbuspkt->crc_l = (uint8_t)modbus_crc; /* Store the lower bytes */
-    modbuspkt->crc_h = (uint8_t)(modbus_crc >> 8); /* Store the higher bytes */
+  return modbus_crc;
 }
 
 static void Modbus_Write(void) {
-    Modbus_TxPkt[0].function = 0x1;
-    Modbus_TxPkt[0].slave_addr = 0x10;
-    Modbus_TxPkt[0].data_num = 0x8;
-    for (uint8_t i = 0; i < MODBUS_DATA_SIZE; i++)
-    {
-      Modbus_TxPkt[0].data_pck[0] += 0x10;
-    }
+  uint16_t modbus_crc;
+  Modbus_TxPkt[0].function = 0x1;
+  Modbus_TxPkt[0].slave_addr = 0x10;
+  Modbus_TxPkt[0].data_num = 0x8;
+  for (uint8_t i = 0; i < MODBUS_DATA_SIZE; i++) {
+    Modbus_TxPkt[0].data_pck[0] += 0x10;
+  }
 
-    Modbus_CrcCalc(&Modbus_TxPkt[0]);
+  modbus_crc = Modbus_CrcCalc(&Modbus_TxPkt[0]);
 
-    UART_write(gUartHandle[CONFIG_UART0], &Modbus_TxTransmitCfg);
+  /* Store the Crc */
+  Modbus_TxPkt[0].crc_l = (uint8_t)modbus_crc; /* Store the lower bytes */
+  Modbus_TxPkt[0].crc_h =
+      (uint8_t)(modbus_crc >> 8); /* Store the higher bytes */
+
+  UART_write(gUartHandle[CONFIG_UART0], &Modbus_TxTransmitCfg);
 }
 
 static void Modbus_Read(void) {
-    UART_read(gUartHandle[CONFIG_UART0], &Modbus_RxTransmitCfg);
+  Modbus_ReadOk = false;
+  UART_read(gUartHandle[CONFIG_UART0], &Modbus_RxTransmitCfg);
 }
-
 
 static void Modbus_InitTask(void) {
   UART_Transaction_init(&Modbus_TxTransmitCfg);
@@ -98,7 +96,8 @@ static void Modbus_InitTask(void) {
 
   /* Initialize the rx transmit cfg */
   Modbus_RxTransmitCfg.buf = &Modbus_RxPkt[0];
-  Modbus_TxTransmitCfg.count = sizeof(MODBUS_PKT_T);
+  Modbus_RxTransmitCfg.count = sizeof(MODBUS_PKT_T);
+
 
   Drivers_uartOpen();
 
@@ -108,55 +107,71 @@ static void Modbus_InitTask(void) {
 /* Global functions */
 void Modbus_Task(void *args);
 
-void Uart1_RxCb(void)
-{
-    SemaphoreP_post(&gUartReadDoneSem);
+void Uart1_RxCb(void) {
+  Modbus_ReadOk = TRUE;
+  SemaphoreP_post(&gUartReadDoneSem);
 }
 
-void Uart1_TxCb(void)
-{
-    SemaphoreP_post(&gUartWriteDoneSem);
-}
+void Uart1_TxCb(void) { SemaphoreP_post(&gUartWriteDoneSem); }
 
 void Modbus_Init(void) {
-    /* This task is created at highest priority, it should create more tasks and then delete itself */
-    ModbusTask = xTaskCreateStatic(Modbus_Task,   /* Pointer to the function that implements the task. */
-                                  "modbus_main", /* Text name for the task.  This is to facilitate debugging only. */
-                                  MODBUS_TASK_SIZE,  /* Stack depth in units of StackType_t typically uint32_t on 32b CPUs */
-                                  NULL,            /* We are not using the task parameter. */
-                                  MODBUS_TASK_PRI,   /* task priority, 0 is lowest priority, configMAX_PRIORITIES-1 is highest */
-                                  ModbusTaskStack,  /* pointer to stack base */
-                                  &ModbusTaskObj ); /* pointer to statically allocated task object memory */
-    configASSERT(ModbusTask != NULL);
-
-    /* Start the scheduler to start the tasks executing. */
+  /* This task is created at highest priority, it should create more tasks and
+   * then delete itself */
+  ModbusTask = xTaskCreateStatic(
+      Modbus_Task,   /* Pointer to the function that implements the task. */
+      "modbus_main", /* Text name for the task.  This is to facilitate debugging
+                        only. */
+      MODBUS_TASK_SIZE, /* Stack depth in units of StackType_t typically
+                           uint32_t on 32b CPUs */
+      NULL,             /* We are not using the task parameter. */
+      MODBUS_TASK_PRI,  /* task priority, 0 is lowest priority,
+                           configMAX_PRIORITIES-1 is highest */
+      ModbusTaskStack,  /* pointer to stack base */
+      &ModbusTaskObj);  /* pointer to statically allocated task object memory */
+  configASSERT(ModbusTask != NULL);
 }
 
 void Modbus_Task(void *args) {
-    Modbus_InitTask();
+  Modbus_InitTask();
 
-    for(;;) {
+  for (;;) {
 
-        switch(Modbus_TaskSt) {
-        case WRITE_STATE:
-        {
-            SemaphoreP_pend(&gUartReadDoneSem, SystemP_WAIT_FOREVER);
-            Modbus_Write();
-            Modbus_TaskSt = READ_STATE;
+    switch (Modbus_TaskSt) {
+    case WRITE_STATE: {
+      SemaphoreP_pend(&gUartReadDoneSem, 2000);
+      if (Modbus_ReadOk) {
+        uint16_t crc_calc = Modbus_CrcCalc(&Modbus_RxPkt[0]);
+        uint16_t crc_actual = ((uint16_t)Modbus_RxPkt[0].crc_h << 8) |
+                              ((uint16_t)Modbus_RxPkt[0].crc_l);
+        /* CRC is correct continue */
+        if (crc_calc == crc_actual) {
+          Modbus_Write();
+          Modbus_TaskSt = READ_STATE;
+        } else {
+          Modbus_TaskSt = FAIL_STATE;
         }
-        break;
+      } else {
+        Modbus_Write();
+        Modbus_TaskSt = READ_STATE;
+      }
+    } break;
 
-        case READ_STATE:
-        {
-            SemaphoreP_pend(&gUartWriteDoneSem, SystemP_WAIT_FOREVER); /* Wait till the write is finished */
-            Modbus_Read();
-            Modbus_TaskSt = WRITE_STATE;
-        }
-        break;
+    case READ_STATE: {
+      SemaphoreP_pend(
+          &gUartWriteDoneSem,
+          SystemP_WAIT_FOREVER); /* Wait till the write is finished */
+      Modbus_Read();
+      Modbus_TaskSt = WRITE_STATE;
+    } break;
 
-        default:
-            break;
-        }
-        ClockP_usleep(MODBUS_TASK_WAIT);
+    case FAIL_STATE: {
+      Modbus_Write();
+      Modbus_TaskSt = READ_STATE;
+    } break;
+
+    default:
+      break;
     }
+    ClockP_usleep(MODBUS_TASK_WAIT);
+  }
 }
