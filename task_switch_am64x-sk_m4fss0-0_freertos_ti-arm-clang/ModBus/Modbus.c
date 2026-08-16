@@ -11,7 +11,7 @@
 
 /* Definitions */
 #define MODBUS_TASK_PRI (configMAX_PRIORITIES - 2)
-#define MODBUS_TASK_WAIT 500000
+#define MODBUS_TASK_WAIT 200000
 #define MODBUS_TASK_SIZE (16384U / sizeof(configSTACK_DEPTH_TYPE))
 #define MODBUS_PKT_NUM 16
 /* Types */
@@ -25,7 +25,7 @@ TaskHandle_t ModbusTask;
 Modbus_Task_st Modbus_TaskSt = READ_STATE;
 
 /* static Variables */
-static volatile Modbus_ReadOk = false;
+static volatile bool Modbus_ReadOk = false;
 static MODBUS_PKT_T Modbus_TxPkt[MODBUS_PKT_NUM];
 static MODBUS_PKT_T Modbus_RxPkt[MODBUS_PKT_NUM];
 
@@ -42,19 +42,19 @@ static uint16_t Modbus_CrcCalc(MODBUS_PKT_T *modbuspkt) {
   const uint16_t polynomial = 0xA001; // Reversed polynomial
 
   for (size_t i = 0; i < sizeof(MODBUS_PKT_T) - 2; i++) {
-      // Step 2: XOR the next byte into the low byte of the CRC register
-      modbus_crc ^= data[i];
-      // Loop through all 8 bits of the current byte
-      for (int bit = 0; bit < 8; bit++) {
-          // Step 4: Check if the Least Significant Bit (LSB) is 1
-          if (modbus_crc & 0x0001) {
-              // Step 3 & 4a: Shift right and XOR with the polynomial
-              modbus_crc = (modbus_crc >> 1) ^ polynomial;
-          } else {
-              // Step 3 & 4b: Just shift right
-              modbus_crc >>= 1;
-          }
+    // Step 2: XOR the next byte into the low byte of the CRC register
+    modbus_crc ^= data[i];
+    // Loop through all 8 bits of the current byte
+    for (int bit = 0; bit < 8; bit++) {
+      // Step 4: Check if the Least Significant Bit (LSB) is 1
+      if (modbus_crc & 0x0001) {
+        // Step 3 & 4a: Shift right and XOR with the polynomial
+        modbus_crc = (modbus_crc >> 1) ^ polynomial;
+      } else {
+        // Step 3 & 4b: Just shift right
+        modbus_crc >>= 1;
       }
+    }
   }
 
   return modbus_crc;
@@ -62,11 +62,16 @@ static uint16_t Modbus_CrcCalc(MODBUS_PKT_T *modbuspkt) {
 
 static void Modbus_Write(void) {
   uint16_t modbus_crc;
+  uint32_t baseAddr;
+
+  baseAddr = (uint32_t)AddrTranslateP_getLocalAddr(WR_EN_BASE_ADDR);
+  GPIO_pinWriteHigh(baseAddr, WR_EN_PIN);
+
   Modbus_TxPkt[0].function = 0x1;
   Modbus_TxPkt[0].slave_addr = 0x10;
   Modbus_TxPkt[0].data_num = 0x8;
   for (uint8_t i = 0; i < MODBUS_DATA_SIZE; i++) {
-    Modbus_TxPkt[0].data_pck[0] += 0x10;
+    Modbus_TxPkt[0].data_pck[i] = i*0x10;
   }
 
   modbus_crc = Modbus_CrcCalc(&Modbus_TxPkt[0]);
@@ -81,6 +86,9 @@ static void Modbus_Write(void) {
 
 static void Modbus_Read(void) {
   Modbus_ReadOk = false;
+  uint32_t baseAddr;
+  baseAddr = (uint32_t)AddrTranslateP_getLocalAddr(WR_EN_BASE_ADDR);
+  GPIO_pinWriteLow(baseAddr, WR_EN_PIN);
   UART_read(gUartHandle[CONFIG_UART0], &Modbus_RxTransmitCfg);
 }
 
@@ -98,7 +106,6 @@ static void Modbus_InitTask(void) {
   Modbus_RxTransmitCfg.buf = &Modbus_RxPkt[0];
   Modbus_RxTransmitCfg.count = sizeof(MODBUS_PKT_T);
 
-
   Drivers_uartOpen();
 
   Modbus_TaskSt = READ_STATE;
@@ -108,13 +115,24 @@ static void Modbus_InitTask(void) {
 void Modbus_Task(void *args);
 
 void Uart1_RxCb(void) {
-  Modbus_ReadOk = TRUE;
+  Modbus_ReadOk = true;
   SemaphoreP_post(&gUartReadDoneSem);
 }
 
-void Uart1_TxCb(void) { SemaphoreP_post(&gUartWriteDoneSem); }
+void Uart1_TxCb(void) {
+  SemaphoreP_post(&gUartWriteDoneSem);
+}
 
 void Modbus_Init(void) {
+  /* Initialize the modbus port */
+  uint32_t baseAddr;
+  uint32_t RS485_EN;
+  /* Read the NFAULT */
+  baseAddr = (uint32_t)AddrTranslateP_getLocalAddr(WR_EN_BASE_ADDR);
+  RS485_EN = GPIO_pinRead(baseAddr, WR_EN_PIN);
+  if (RS485_EN == GPIO_PIN_HIGH) {
+    return;
+  }
   /* This task is created at highest priority, it should create more tasks and
    * then delete itself */
   ModbusTask = xTaskCreateStatic(
@@ -138,7 +156,8 @@ void Modbus_Task(void *args) {
 
     switch (Modbus_TaskSt) {
     case WRITE_STATE: {
-      SemaphoreP_pend(&gUartReadDoneSem, 2000);
+      SemaphoreP_pend(&gUartReadDoneSem,
+                      ClockP_usecToTicks(5 * MODBUS_TASK_WAIT));
       if (Modbus_ReadOk) {
         uint16_t crc_calc = Modbus_CrcCalc(&Modbus_RxPkt[0]);
         uint16_t crc_actual = ((uint16_t)Modbus_RxPkt[0].crc_h << 8) |
@@ -148,7 +167,8 @@ void Modbus_Task(void *args) {
           Modbus_Write();
           Modbus_TaskSt = READ_STATE;
         } else {
-          Modbus_TaskSt = FAIL_STATE;
+          Modbus_Write();
+          Modbus_TaskSt = READ_STATE;
         }
       } else {
         Modbus_Write();

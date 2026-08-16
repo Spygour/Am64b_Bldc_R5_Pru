@@ -9,6 +9,8 @@
 /**
  * Import the modules used in this configuration.
  */
+const gpio            = scripting.addModule("/drivers/gpio/gpio", {}, false);
+const gpio1           = gpio.addInstance();
 const uart            = scripting.addModule("/drivers/uart/uart", {}, false);
 const uart1           = uart.addInstance();
 const addr_translate  = scripting.addModule("/kernel/dpl/addr_translate", {}, false);
@@ -40,11 +42,17 @@ const section8        = section.addInstance();
 /**
  * Write custom configuration values to the imported modules.
  */
+gpio1.pinDir                   = "OUTPUT";
+gpio1.$name                    = "WR_EN";
+gpio1.MCU_GPIO.gpioPin.rx      = false;
+gpio1.MCU_GPIO.gpioPin.$assign = "MCU_SPI0_D0";
+
 uart1.$name            = "CONFIG_UART0";
 uart1.readMode         = "CALLBACK";
 uart1.readCallbackFxn  = "Uart1_RxCb";
 uart1.writeMode        = "CALLBACK";
 uart1.writeCallbackFxn = "Uart1_TxCb";
+uart1.baudRate         = 100000;
 
 addr_translate1.$name     = "CONFIG_ADDR_TRANSLATE_REGION0";
 addr_translate1.localAddr = 0x80000000;
@@ -186,6 +194,7 @@ section8.output_section[0].alignment = 0;
  * version of the tool will not impact the pinmux you originally saw.  These lines can be completely deleted in order to
  * re-solve from scratch.
  */
+gpio1.MCU_GPIO.$suggestSolution                 = "MCU_GPIO0";
 uart1.MCU_UART.$suggestSolution                 = "MCU_USART1";
 uart1.MCU_UART.RXD.$suggestSolution             = "MCU_UART1_RXD";
 uart1.MCU_UART.TXD.$suggestSolution             = "MCU_UART1_TXD";

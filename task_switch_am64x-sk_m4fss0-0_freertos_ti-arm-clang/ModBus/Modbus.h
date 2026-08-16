@@ -23,5 +23,5 @@ typedef struct
 /* Local functions */
 
 /* Global functions */
-extern void UartDrv_Init(void);
+extern void ModBus_Init(void);
 #endif
