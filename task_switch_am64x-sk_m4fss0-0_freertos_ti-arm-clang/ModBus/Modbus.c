@@ -11,18 +11,18 @@
 
 /* Definitions */
 #define MODBUS_TASK_PRI (configMAX_PRIORITIES - 2)
-#define MODBUS_TASK_WAIT 200000
+#define MODBUS_TASK_WAIT 10000
 #define MODBUS_TASK_SIZE (16384U / sizeof(configSTACK_DEPTH_TYPE))
 #define MODBUS_PKT_NUM 16
 /* Types */
-typedef enum { WRITE_STATE, READ_STATE, FAIL_STATE } Modbus_Task_st;
+typedef enum { INIT_STATE, WRITE_STATE, READ_STATE, FAIL_STATE } Modbus_Task_st;
 
 /* global variables */
 StackType_t ModbusTaskStack[MODBUS_TASK_SIZE] __attribute__((aligned(32)));
 
 StaticTask_t ModbusTaskObj;
 TaskHandle_t ModbusTask;
-Modbus_Task_st Modbus_TaskSt = READ_STATE;
+Modbus_Task_st Modbus_TaskSt = INIT_STATE;
 
 /* static Variables */
 static volatile bool Modbus_ReadOk = false;
@@ -71,7 +71,7 @@ static void Modbus_Write(void) {
   Modbus_TxPkt[0].slave_addr = 0x10;
   Modbus_TxPkt[0].data_num = 0x8;
   for (uint8_t i = 0; i < MODBUS_DATA_SIZE; i++) {
-    Modbus_TxPkt[0].data_pck[i] = i*0x10;
+    Modbus_TxPkt[0].data_pck[i] = i * 0x10;
   }
 
   modbus_crc = Modbus_CrcCalc(&Modbus_TxPkt[0]);
@@ -108,8 +108,7 @@ static void Modbus_InitTask(void) {
 
   Drivers_uartOpen();
 
-  Modbus_TaskSt = READ_STATE;
-  Modbus_Write();
+  Modbus_TaskSt = INIT_STATE;
 }
 /* Global functions */
 void Modbus_Task(void *args);
@@ -119,9 +118,7 @@ void Uart1_RxCb(void) {
   SemaphoreP_post(&gUartReadDoneSem);
 }
 
-void Uart1_TxCb(void) {
-  SemaphoreP_post(&gUartWriteDoneSem);
-}
+void Uart1_TxCb(void) { SemaphoreP_post(&gUartWriteDoneSem); }
 
 void Modbus_Init(void) {
   /* Initialize the modbus port */
@@ -155,9 +152,14 @@ void Modbus_Task(void *args) {
   for (;;) {
 
     switch (Modbus_TaskSt) {
+    case INIT_STATE: {
+      Modbus_Write();
+      Modbus_TaskSt = READ_STATE;
+    } break;
+
     case WRITE_STATE: {
       SemaphoreP_pend(&gUartReadDoneSem,
-                      ClockP_usecToTicks(5 * MODBUS_TASK_WAIT));
+                      ClockP_usecToTicks(1000000)); /* Maximum 1 sec wait */
       if (Modbus_ReadOk) {
         uint16_t crc_calc = Modbus_CrcCalc(&Modbus_RxPkt[0]);
         uint16_t crc_actual = ((uint16_t)Modbus_RxPkt[0].crc_h << 8) |
@@ -180,6 +182,8 @@ void Modbus_Task(void *args) {
       SemaphoreP_pend(
           &gUartWriteDoneSem,
           SystemP_WAIT_FOREVER); /* Wait till the write is finished */
+      ClockP_usleep(
+          40); /* Provide extra delay till we send completely the data */
       Modbus_Read();
       Modbus_TaskSt = WRITE_STATE;
     } break;
